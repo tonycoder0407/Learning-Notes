@@ -113,5 +113,107 @@ Page Ability是带UI界面的能力，而Feature Ability是不带有UI界面的�
 
 这里注意一下，透漏了一点实现方案。
 
-AbilitySlice是归属于具体的Page的，而每一个Page均有一个栈来存放自己的AbilitySlice实例。当外界调用某个特定的AbilitySlice的时候就会检查
+AbilitySlice是归属于具体的Page的，而每一个Page均有一个栈来存放自己的AbilitySlice实例。当外界调用某个特定的AbilitySlice的时候就会检查该AbilitySlice在栈中的位置，如果在栈上还有别的AbilitySlice实例会将其弹出。相当于某个软件的部分子界面（后入栈的一般都会是子界面？）有可能会被销毁。
+
+### 不同应用间导航以及跨设备流转在后文说明。
+
+## FA
+
+FA主要分为Data Ability和Service Ability。
+
+### Service Ability（本部分简称为SA）
+
+#### 综述
+
+> 基于Service模板的Ability（以下简称“Service”）主要用于后台运行任务（如执行音乐播放、文件下载等），但不提供用户交互界面。Service可由其他应用或Ability启动，即使用户切换到其他应用，Service仍将在后台继续运行。
+>
+> Service是单实例的。在一个设备上，相同的Service只会存在一个实例。如果多个Ability共用这个实例，只有当与Service绑定的所有Ability都退出后，Service才能够退出。由于Service是在主线程里执行的，因此，如果在Service里面的操作时间过长，开发者必须在Service里创建新的线程来处理（详见[线程间通信](https://developer.harmonyos.com/cn/docs/documentation/doc-guides/inter-thread-overview-0000000000038958)），防止造成主线程阻塞，应用程序无响应。
+
+这里主要说明一下SA的用途：后台服务的单例设计模式。SA作为后台进程将持续运行至任务结束或者被主动打断。SA可以被应用或者Ability启用，但是由于单例的SA可以被不同的Ability绑定，所以SA的生命周期会长于任何一个与它绑定的Ability。此外，SA的单例设计也主动提升了其拥有的权限，在主线程内执行，所以需要保证该线程的操作不能**持续太久**，需要及时退出并创建新线程或者抛出异常。
+
+#### 创建Service
+
+> - onConnect()
+>
+>   在Ability和Service连接时调用，该方法返回IRemoteObject对象，用户可以在该回调函数中生成对应Service的IPC通信通道，以便Ability与Service交互。Ability可以多次连接同一个Service，系统会缓存该Service的IPC通信对象，只有第一个客户端连接Service时，系统才会调用Service的onConnect方法来生成IRemoteObject对象，而后系统会将同一个RemoteObject对象传递至其他连接同一个Service的所有客户端，而无需再次调用onConnect方法。
+>
+> - onDisconnect()
+>
+>   在Ability与绑定的Service断开连接时调用。
+
+这里主要关注这两个函数。绑定Ability和Service时调用该方法可以返回一个**可以被复用的`IRemoteObject`对象**。这样设计时，`onConnect`函数在生命周期内应当只调用一次。所以在某个特定Ability多次调用同一个Service时要注意处理`IRemoteObject`对象时应当操作对象本身而非在`onConnect`函数中实现其他逻辑。
+
+```java
+public class ServiceAbility extends Ability {
+    @Override
+    public void onStart(Intent intent) {
+        super.onStart(intent);
+    }
+
+    @Override
+    public void onCommand(Intent intent, boolean restart, int startId) {
+        super.onCommand(intent, restart, startId);
+    }
+
+    @Override
+    public IRemoteObject onConnect(Intent intent) {
+        // 函数仅在第一次连接时调用。当作构造函数来设计逻辑。
+        return super.onConnect(intent);
+    }
+
+    @Override
+    public void onDisconnect(Intent intent) {
+        super.onDisconnect(intent);
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+    }
+}
+```
+
+#### 启动Service
+
+> - 启动本地设备Service的代码示例如下：
+>
+>   ```java
+>   Intent intent = new Intent();
+>   Operation operation = new Intent.OperationBuilder()        
+>       .withDeviceId("")        
+>       .withBundleName("com.domainname.hiworld.himusic")     
+>       .withAbilityName("com.domainname.hiworld.himusic.ServiceAbility")       
+>       .build();
+>   intent.setOperation(operation);startAbility(intent);
+>   ```
+>
+>   启动远程设备Service的代码示例如下：
+>
+>   ```java
+>   Intent intent = new Intent();
+>   Operation operation = new Intent.OperationBuilder()        
+>       .withDeviceId("deviceId")        
+>       .withBundleName("com.domainname.hiworld.himusic")        
+>       .withAbilityName("com.domainname.hiworld.himusic.ServiceAbility")        
+>       .withFlags(Intent.FLAG_ABILITYSLICE_MULTI_DEVICE) 
+>       // 设置支持分布式调度系统多设备启动的标识        
+>       .build();
+>   intent.setOperation(operation);
+>   startAbility(intent);
+>   ```
+>
+>   执行上述代码后，Ability将通过startAbility() 方法来启动Service。
+>
+>   - 如果Service尚未运行，则系统会先调用onStart()来初始化Service，再回调Service的onCommand()方法来启动Service。
+>   - 如果Service正在运行，则系统会直接回调Service的onCommand()方法来启动Service。
+>
+> - 停止Service
+>
+>   Service一旦创建就会一直保持在后台运行，除非必须回收内存资源，否则系统不会停止或销毁Service。开发者可以在Service中通过terminateAbility()停止本Service或在其他Ability调用stopAbility()来停止Service。
+>
+>   停止Service同样支持停止本地设备Service和停止远程设备Service，使用方法与启动Service一样。一旦调用停止Service的方法，系统便会尽快销毁Service。
+
+老三样啦。先new一个Intent，然后定义启动的Operation，接着把Intent和Operation绑在一起就可以startAbility了。这里注意的一点是，统计信息放到onCommand比较好，由于onStart仅负责初始化，二次唤起不会调用onStart。停止Service也同样必要，在完成类似于文件下载、网络通信等行为后及时退出Service有利于资源回收。
+
+### Data Ability
 
