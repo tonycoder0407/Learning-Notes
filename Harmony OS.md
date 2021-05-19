@@ -175,6 +175,10 @@ public class ServiceAbility extends Ability {
 
 #### 启动Service
 
+> ​		如果Service需要与Page Ability或其他应用的Service Ability进行交互，则应创建用于连接的Connection。Service支持其他Ability通过connectAbility()方法与其进行连接。
+>
+> ​		在使用connectAbility()处理回调时，需要传入目标Service的Intent与IAbilityConnection的实例。IAbilityConnection提供了两个方法供开发者实现：onAbilityConnectDone()用来处理连接的回调，onAbilityDisconnectDone()用来处理断开连接的回调。
+>
 > - 启动本地设备Service的代码示例如下：
 >
 >   ```java
@@ -215,5 +219,73 @@ public class ServiceAbility extends Ability {
 
 老三样啦。先new一个Intent，然后定义启动的Operation，接着把Intent和Operation绑在一起就可以startAbility了。这里注意的一点是，统计信息放到onCommand比较好，由于onStart仅负责初始化，二次唤起不会调用onStart。停止Service也同样必要，在完成类似于文件下载、网络通信等行为后及时退出Service有利于资源回收。
 
+####  Service Ability生命周期
+
+提供了两种路径的生命周期运作方式。总体而言，生产和消费Ability是两种相反的操作。
+
+
+
+![点击放大](https://alliance-communityfile-drcn.dbankcdn.com/FileServer/getFile/cmtyPub/011/111/111/0000000000011111111.20210330203818.06600073438459576747498270270266:50520330103356:2800:ED431E4CA796C483A7A9697A0BA8B41EA868A23529BCEFB6316282C819D503D9.jpg?needInitFileName=true?needInitFileName=true?needInitFileName=true)
+
+
+
+#### 前台Service
+
+> 一般情况下，Service都是在后台运行的，后台Service的优先级都是比较低的，当资源不足时，系统有可能回收正在运行的后台Service。
+>
+> 在一些场景下（如播放音乐），用户希望应用能够一直保持运行，此时就需要使用前台Service。前台Service会始终保持正在运行的图标在系统状态栏显示。
+>
+> 使用前台Service并不复杂，开发者只需在Service创建的方法里，调用keepBackgroundRunning()将Service与通知绑定。调用keepBackgroundRunning()方法前需要在配置文件中声明ohos.permission.KEEP_BACKGROUND_RUNNING权限，同时还需要在配置文件中添加对应的backgroundModes参数。在onStop()方法中调用cancelBackgroundRunning()方法可停止前台Service。
+>
+> 使用前台Service的onStart()代码示例如下：
+>
+> ```java
+> // 创建通知，其中1005为notificationId
+> NotificationRequest request = new NotificationRequest(1005);
+> NotificationRequest.NotificationNormalContent content = new NotificationRequest.NotificationNormalContent();
+> content.setTitle("title").setText("text");
+> // ps：为啥这里不能直接整个构造函数唔，感觉套的层数有点多了hh
+> NotificationRequest.NotificationContent notificationContent = new NotificationRequest.NotificationContent(content);
+> request.setContent(notificationContent);
+> // 绑定通知，1005为创建通知时传入的notificationId
+> keepBackgroundRunning(1005, request);
+> ```
+>
+> 在配置文件中配置如下：
+>
+> ```json
+> {        
+>     "name": ".ServiceAbility",    
+>     "type": "service",    
+>     "visible": true,    
+>     "backgroundModes": ["dataTransfer", "location"]
+> }
+> ```
+
+前台Service最重要的一个特点是需要绑定到具体的前台通知上。这一点相当于将FA升级成为了PA。只有具体的焦点才能保证该Service不会被清理。
+
 ### Data Ability
+
+> 使用Data模板的Ability（以下简称“Data”）有助于应用管理其自身和其他应用存储数据的访问，并提供与其他应用共享数据的方法。Data既可用于同设备不同应用的数据共享，也支持跨设备不同应用的数据共享。
+>
+> 数据的存放形式多样，可以是数据库，也可以是磁盘上的文件。Data对外提供对数据的增、删、改、查，以及打开文件等接口，这些接口的具体实现由开发者提供。
+
+DataAbility相当于提供了一个与传统前后端开发中后台的一个重要功能：数据管理。
+
+主要应用应当是与本地数据库和文件仓库进行数据的持久化以及查询提取利用。
+
+> Data的提供方和使用方都通过URI（Uniform Resource Identifier）来标识一个具体的数据，例如数据库中的某个表或磁盘上的某个文件。HarmonyOS的URI仍基于URI通用标准，格式如下：
+>
+> ![img](https://alliance-communityfile-drcn.dbankcdn.com/FileServer/getFile/cmtyPub/011/111/111/0000000000011111111.20210330203818.77215288438676699596441357847567:50520330103356:2800:202B79BCF8BE79666DB4FBE06EACAD15D65CEDB1B59A732EE67F18893557DED0.png?needInitFileName=true?needInitFileName=true?needInitFileName=true)
+>
+> - scheme：协议方案名，固定为“dataability”，代表Data Ability所使用的协议类型。
+> - authority：设备ID。如果为跨设备场景，则为目标设备的ID；如果为本地设备场景，则不需要填写。
+> - path：资源的路径信息，代表特定资源的位置信息。
+> - query：查询参数。
+> - fragment：可以用于指示要访问的子资源。
+>
+> URI示例：
+>
+> - 跨设备场景：dataability://*device_id*/*com.domainname.dataability.persondata*/*person*/*10*
+> - 本地设备：dataability:///*com.domainname.dataability.persondata*/*person*/*10*
 
