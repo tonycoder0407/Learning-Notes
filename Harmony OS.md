@@ -1,8 +1,32 @@
-# Harmony OS Briefly Intro
+# Harmony OS Develop Briefly Intro
 
 > 这一篇还是用中文写吧== 再搞英文文档时间就顶不住了QAQ
+>
+> 以及这篇的定位其实算个人的一点阅读笔记，带点吐槽那种。
+>
+> 主要用途是自学，当然宁如果看到了指点一下小菜鸟也是极好的www
+>
+> 求轻点喷（x
 
 首先介绍一下主要的几个重要概念。
+
+大致按照文档的方式进行总结，但是会根据个人的喜好进行微调，一些觉得不适合在当前文档展开的会适当后移。
+
+希望看完以后会大概有一些想法吧。
+
+重要的概念个人认为有这几个部分：
+
+* Ability（FA & PA）
+
+* 线程
+
+* UI & Media
+
+* 网络连接
+
+* 设备管理
+
+剩下的会按照进度往后稍稍，毕竟考试周这么写文档跟二货一样（x
 
 ## FA & PA
 
@@ -288,4 +312,435 @@ DataAbility相当于提供了一个与传统前后端开发中后台的一个重
 >
 > - 跨设备场景：dataability://*device_id*/*com.domainname.dataability.persondata*/*person*/*10*
 > - 本地设备：dataability:///*com.domainname.dataability.persondata*/*person*/*10*
+
+这里采用的URI设计应当与Restful API的设计思路相类似。
+
+#### 创建Data
+
+> 确定数据的存储方式，Data支持以下两种数据形式：
+>
+> - 文件数据：如文本、图片、音乐等。
+> - 结构化数据：如数据库等。
+
+类似的后台的结构化数据以及传输信息使用的json格式应当适用于数据库方式，而文件数据更多应当用于静态资源加载以及网络通信时的动态操作。
+
+> Data提供了文件存储和数据库存储两组接口供用户使用。
+>
+> **文件存储**
+>
+> 开发者需要在Data中重写FileDescriptor openFile(Uri uri, String mode)方法来操作文件：uri为客户端传入的请求目标路径；mode为开发者对文件的操作选项，可选方式包含“r”(读), “w”(写), “rw”(读写)等。
+>
+> ohos.rpc.MessageParcel类提供了一个静态方法，用于获取MessageParcel实例。开发者可通过获取到的MessageParcel实例，使用dupFileDescriptor()函数复制待操作文件流的文件描述符，并将其返回，供远端应用访问文件。
+>
+> 示例：根据传入的uri打开对应的文件
+>
+> ```java
+> private static final HiLogLabel LABEL_LOG = new HiLogLabel(HiLog.LOG_APP, 0xD00201, "Data_Log");
+> // 这个类似常量的HiLogLabel用于区分log的来源，后文留坑补api解释（
+> @Override
+> public FileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
+>     // 创建messageParcel    
+>     MessageParcel messageParcel = MessageParcel.obtain();
+>     // obtain是静态方法，获取实例。
+>     File file = new File(uri.getDecodedPathList().get(0));
+>     //get(0)是获取URI完整字段中查询参数字段。    
+>     if (mode == null || !"rw".equals(mode)) {        
+>         file.setReadOnly();    
+>         // 这里保证了：不是留空或者指明rw则设置为只读。
+>         // r与w均无法对文件进行操作。
+>     }    
+>     FileInputStream fileIs = new FileInputStream(file);  
+>     // 这个是java的api，得到文件后写进文件流
+>     FileDescriptor fd = null;    
+>     // 试图得到FileDescriptor
+>     try {        
+>         fd = fileIs.getFD();    
+>     } catch (IOException e) {        
+>         HiLog.info(LABEL_LOG, "failed to getFD");    
+>     }
+>     // 绑定文件描述符
+>     // 这里返回了文件描述符的一份拷贝。
+>     return messageParcel.dupFileDescriptor(fd);
+> }
+> ```
+
+简而言之，文件存储仍然使用了Java的api进行包装。看上去保存文件直接使用java的方式保存到固定路径即可？但是问题在于文件的目录应该怎么写。留坑。
+
+> **数据库存储**
+>
+> 1. 初始化数据库连接。
+>
+> 系统会在应用启动时调用onStart()方法创建Data实例。在此方法中，开发者应该创建数据库连接，并获取连接对象，以便后续和数据库进行操作。为了避免影响应用启动速度，开发者应当尽可能将非必要的耗时任务推迟到使用时执行，而不是在此方法中执行所有初始化。
+
+由于onStart函数生命周期内必定只调用一次，所以很适合做数据库的连接。（？或许是这样吧x）
+
+> 示例：初始化的时候连接数据库
+>
+> ```java
+>private static final String DATABASE_NAME = "UserDataAbility.db";
+> private static final String DATABASE_NAME_ALIAS = "UserDataAbility";
+>private static final HiLogLabel LABEL_LOG = new HiLogLabel(HiLog.LOG_APP, 0xD00201, "Data_Log");
+> private OrmContext ormContext = null;
+>@Override
+> public void onStart(Intent intent) {    
+>  super.onStart(intent);    
+>  DatabaseHelper manager = new DatabaseHelper(this); 
+>     // 这个this是Ability
+>  ormContext = manager.getOrmContext(DATABASE_NAME_ALIAS, DATABASE_NAME, BookStore.class);
+>     // 看上去这个应该是需要单独配置来着？再挖个坑。
+> }
+>    ```
+>    
+
+主要的问题是这个数据库名称以及具体配置应当在哪里实现（x
+
+
+> 2. 编写数据库操作方法。
+>
+> | 方法                                                         | 描述                   |
+> | ------------------------------------------------------------ | ---------------------- |
+> | `ResultSet query(Uri uri, String[] columns, DataAbilityPredicates predicates)` | 查询数据库             |
+> | `int insert(Uri uri, ValuesBucket value)`                    | 向数据库中插入单条数据 |
+> | `int batchInsert(Uri uri, ValuesBucket[] values)`            | 向数据库中插入多条数据 |
+> | `int delete(Uri uri, DataAbilityPredicates predicates)`      | 删除一条或多条数据     |
+> | `int update(Uri uri, ValuesBucket value, DataAbilityPredicates predicates)` | 更新数据库             |
+> | `DataAbilityResult[] executeBatch(ArrayList<DataAbilityOperation> operations)` | 批量操作数据库         |
+>
+> 这些方法的使用说明如下：
+>
+>    - query()
+>
+> 该方法接收三个参数，分别是查询的目标路径，查询的列名，以及查询条件，查询条件由类DataAbilityPredicates构建。根据传入的列名和查询条件查询用户表的代码示例如下：
+>
+> ```java
+> public ResultSet query(Uri uri, String[] columns, DataAbilityPredicates predicates) {
+>     // uri是查询路径，columns是具体列名，predicates是条件
+>     if (ormContext == null) {
+>         HiLog.error(LABEL_LOG, "failed to query, ormContext is null");
+>         return null;
+>     }
+> 
+>     // 查询数据库
+>     OrmPredicates ormPredicates = DataAbilityUtils.createOrmPredicates(predicates,User.class);
+>     // DataAbilityPredicates是建立查询条件的类，传入后与具体类形成sql
+>     ResultSet resultSet = ormContext.query(ormPredicates, columns);
+>     // 奇怪的一点是这个uri没用到 23333
+>     if (resultSet == null) {
+>         HiLog.info(LABEL_LOG, "resultSet is null");
+>     }
+> 
+>     // 返回结果
+>     return resultSet;
+> }
+> ```
+>
+>    - insert()
+>
+> 该方法接收两个参数，分别是插入的目标路径和插入的数据值。其中，插入的数据由ValuesBucket封装，服务端可以从该参数中解析出对应的属性，然后插入到数据库中。此方法返回一个int类型的值用于标识结果。接收到传过来的用户信息并把它保存到数据库中的代码示例如下：
+>
+> ```java
+> public int insert(Uri uri, ValuesBucket value) {    
+>     // 参数校验    
+>     if (ormContext == null) {        
+>         HiLog.error(LABEL_LOG, "failed to insert, ormContext is null");        
+>         return -1;    
+>     }
+>    // 构造插入数据    
+>     User user = new User();    
+>     user.setUserId(value.getInteger("userId"));   
+>     user.setFirstName(value.getString("firstName"));
+>     user.setLastName(value.getString("lastName"));   
+>     user.setAge(value.getInteger("age"));   
+>     user.setBalance(value.getDouble("balance"));
+>     // 这里感觉ValuesBucket是一个json或者字典？2333
+>    // 插入数据库    
+>     boolean isSuccessful = ormContext.insert(user); 
+>     // 注意insert函数的返回值是bool
+>     if (!isSuccessful) {        
+>         HiLog.error(LABEL_LOG, "failed to insert");        
+>         return -1;    
+>     }    
+>     isSuccessful = ormContext.flush();   
+>     if (!isSuccessful) {      
+>         HiLog.error(LABEL_LOG, "failed to insert flush");   
+>         return -1;    
+>     }    
+>     // insert操作分为两步，说明不经过flush的话或许会保留状态？
+>     // 另一个也可以防止insert出错而bool返回是true（这里应该是插入成功但是状态并不完全正确。）
+>     DataAbilityHelper.creator(this, uri).notifyChange(uri);   
+>     // 这里或许是通过java的notifyAll对所有监听者作了状态变更说明？也有可能是自己实现的事件监听策略？（看到后面如果有的话就补个坑x
+>     int id = Math.toIntExact(user.getRowId());   
+>     // 这个函数没见过，补一个api手册的内容
+>     return id;
+> }
+> ```
+>
+>    - batchInsert()
+>
+> 该方法为批量插入方法，接收一个ValuesBucket数组用于单次插入一组对象。它的作用是提高插入多条重复数据的效率。该方法系统已实现，开发者可以直接调用。
+>
+>    - delete()
+>
+> 该方法用来执行删除操作。删除条件由类DataAbilityPredicates构建，服务端在接收到该参数之后可以从中解析出要删除的数据，然后到数据库中执行。根据传入的条件删除用户表数据的代码示例如下：
+>
+> ```java
+> public int delete(Uri uri, DataAbilityPredicates predicates) {    
+>     if (ormContext == null) {        
+>         HiLog.error(LABEL_LOG, "failed to delete, ormContext is null");        
+>         return -1;    
+>     }
+>    OrmPredicates ormPredicates = DataAbilityUtils.createOrmPredicates(predicates,User.class);
+>     int value = ormContext.delete(ormPredicates);    
+>     DataAbilityHelper.creator(this, uri).notifyChange(uri);    
+>     return value;
+> }
+> ```
+>
+>    - update()
+>
+> 此方法用来执行更新操作。用户可以在ValuesBucket参数中指定要更新的数据，在DataAbilityPredicates中构建更新的条件等。更新用户表的数据的代码示例如下：
+>
+> ```java
+> public int update(Uri uri, ValuesBucket value, DataAbilityPredicates predicates) {
+>     if (ormContext == null) {
+>        HiLog.error(LABEL_LOG, "failed to update, ormContext is null");
+>        return -1;
+>    }
+> 
+>    OrmPredicates ormPredicates = DataAbilityUtils.createOrmPredicates(predicates,User.class);
+>    int index = ormContext.update(ormPredicates, value);
+>    HiLog.info(LABEL_LOG, "UserDataAbility update value:" + index);
+>    DataAbilityHelper.creator(this, uri).notifyChange(uri);
+>    return index;
+> }
+> ```
+>
+>    - executeBatch()
+>
+> 此方法用来批量执行操作。DataAbilityOperation中提供了设置操作类型、数据和操作条件的方法，用户可自行设置自己要执行的数据库操作。该方法系统已实现，开发者可以直接调用。
+
+总而言之，DataAbility基本上是基于Java的实现，在创建数据方面需要重视`ValuesBucket`类，该类是进行数据封装的接口，而大部分操作都需要`DataAbilityPredicates`类的对象实现。
+
+#### 注册UserDataAbility
+
+> 配置文件中该字段在创建Data Ability时会自动创建，name与创建的Data Ability一致。
+>
+> 需要关注以下属性：
+>
+> - type: 类型设置为data
+> - uri: 对外提供的访问路径，全局唯一
+> - permissions: 访问该data ability时需要申请的访问权限
+
+注意uri的命名问题。以及permissions是**要访问的数据**而非一般的存储权限。
+
+### 访问Data
+
+核心类：`DataAbilityHelper`，作为DataAbility的客户端访问Data。
+
+#### 声明使用权限
+
+> 如果待访问的Data声明了访问需要权限，则访问此Data需要在配置文件中声明需要此权限。声明请参考[权限申请字段说明](https://developer.harmonyos.com/cn/docs/documentation/doc-guides/security-permissions-guidelines-0000000000029886#ZH-CN_TOPIC_0000001072906209__table73291742539)。
+>
+> ```json
+> "reqPermissions": [    
+>     {        
+>         "name": "com.example.myapplication5.DataAbility.DATA"    
+>     },    
+>     // 访问文件还需要添加访问存储读写权限    
+>     {        
+>         "name": "ohos.permission.READ_USER_STORAGE"    
+>     },    
+>     {        
+>         "name": "ohos.permission.WRITE_USER_STORAGE"    
+>     }
+> ]
+> ```
+
+这个权限的目的是访问者申请的，申请到才能够访问。
+
+而数据提供方可以限制申请访问者必须得到xx权限才能申请。
+
+因此这个数据**并不能**通过权限声明**完全保护**。
+
+#### 创建DataAbilityHelper
+
+> DataAbilityHelper为开发者提供了creator()方法来创建DataAbilityHelper实例。该方法为静态方法，有多个重载。最常见的方法是通过传入一个context对象来创建DataAbilityHelper对象。
+>
+> 获取helper对象示例：
+>
+> ```java
+> DataAbilityHelper helper = DataAbilityHelper.creator(this);
+> ```
+
+这个写法让我感觉十分奇怪唔，挖个坑研究下这个context是什么牛马。
+
+#### 访问Data Ability
+
+> DataAbilityHelper为开发者提供了一系列的接口来访问不同类型的数据（文件、数据库等）。
+>
+> - 访问文件
+>
+>   DataAbilityHelper为开发者提供了FileDescriptor openFile(Uri uri, String mode)方法来操作文件。此方法需要传入两个参数，其中uri用来确定目标资源路径，mode用来指定打开文件的方式，可选方式包含“r”(读), “w”(写), “rw”(读写)，“wt”(覆盖写)，“wa”(追加写)，“rwt”(覆盖写且可读)。
+>
+>   该方法返回一个目标文件的FD（文件描述符），把文件描述符封装成流，开发者就可以对文件流进行自定义处理。
+>
+>   访问文件示例：
+>
+>   ```java
+>   // 读取文件描述符
+>   FileDescriptor fd = helper.openFile(uri, "r");
+>   FileInputStream fis = new FileInputStream(fd);
+>   // 使用文件描述符封装成的文件流，进行文件操作
+>   ```
+
+这里注意一下，openFIle会返回FileDescriptor是已经被override过的（（
+
+> - 访问数据库
+>
+>   DataAbilityHelper为开发者提供了增、删、改、查以及批量处理等方法来操作数据库。
+>
+>   说明
+>
+>   对数据库的操作方法，详见[数据管理](https://developer.harmonyos.com/cn/docs/documentation/doc-guides/database-relational-overview-0000000000030046)中各数据库类型的开发指南。
+>
+>   
+>
+>   | 方法                                                         | 描述                   |
+>   | ------------------------------------------------------------ | ---------------------- |
+>   | `ResultSet query(Uri uri, String[] columns, DataAbilityPredicates predicates) ` | 查询数据库             |
+>   | `int insert(Uri uri, ValuesBucket value) `                   | 向数据库中插入单条数据 |
+>   | `int batchInsert(Uri uri, ValuesBucket[] values) `           | 向数据库中插入多条数据 |
+>   | `int delete(Uri uri, DataAbilityPredicates predicates) `     | 删除一条或多条数据     |
+>   | `int update(Uri uri, ValuesBucket value, DataAbilityPredicates predicates) ` | 更新数据库             |
+>   | `DataAbilityResult[] executeBatch(ArrayList<DataAbilityOperation> operations) ` | 批量操作数据库         |
+>
+>   这些方法的使用说明如下：
+>
+>   - query()
+>
+>     查询方法，其中uri为目标资源路径，columns为想要查询的字段。开发者的查询条件可以通过DataAbilityPredicates来构建。查询用户表中id在101-103之间的用户，并把结果打印出来，代码示例如下：
+>
+>     ```java
+>     DataAbilityHelper helper = DataAbilityHelper.creator(this);
+>     // 构造查询条件
+>     DataAbilityPredicates predicates = new DataAbilityPredicates();
+>     predicates.between("userId", 101, 103);
+>     // 进行查询
+>     ResultSet resultSet = helper.query(uri, columns, predicates);
+>     // 处理结果
+>     resultSet.goToFirstRow();do {    
+>         // 在此处理ResultSet中的记录
+>         ;} while(resultSet.goToNextRow());
+>     ```
+>
+>   - insert()
+>
+>     新增方法，其中uri为目标资源路径，ValuesBucket为要新增的对象。插入一条用户信息的代码示例如下：
+>
+>     ```java
+>     DataAbilityHelper helper = DataAbilityHelper.creator(this);
+>     // 构造插入数据
+>     ValuesBucket valuesBucket = new ValuesBucket();
+>     valuesBucket.putString("name", "Tom");
+>     valuesBucket.putInteger("age", 12);
+>     helper.insert(uri, valuesBucket);
+>     ```
+>
+>   // 看到这里才发现put也是写好的。。好奇是怎么实现的emm
+>
+>   - batchInsert(）
+>
+>     批量插入方法，和insert()类似。批量插入用户信息的代码示例如下：
+>
+>     ```java
+>     DataAbilityHelper helper = DataAbilityHelper.creator(this);
+>     // 构造插入数据
+>     ValuesBucket[] values = new ValuesBucket[2];
+>     values[0] = new ValuesBucket();
+>     values[0].putString("name", "Tom");
+>     values[0].putInteger("age", 12);
+>     values[1] = new ValuesBucket();
+>     values[1].putString("name", "Tom1");
+>     values[1].putInteger("age", 16);
+>     helper.batchInsert(uri, values);
+>     ```
+>
+>     // 实话讲没看出来批量了啥emm
+>
+>   - delete()
+>
+>     删除方法，其中删除条件可以通过DataAbilityPredicates来构建。删除用户表中id在101-103之间的用户，代码示例如下：
+>
+>     ```java
+>     DataAbilityHelper helper = DataAbilityHelper.creator(this);
+>     // 构造删除条件
+>     DataAbilityPredicates predicates = new DataAbilityPredicates();
+>     predicates.between("userId", 101, 103);
+>     helper.delete(uri, predicates);
+>     ```
+>
+>     画个重点，between是一个函数，回头整理下predicates支持的函数有啥吧
+>
+>   - update()
+>
+>     更新方法，更新数据由ValuesBucket传入，更新条件由DataAbilityPredicates来构建。更新id为102的用户，代码示例如下：
+>
+>     ```java
+>     DataAbilityHelper helper = DataAbilityHelper.creator(this);
+>     // 构造更新条件
+>     DataAbilityPredicates predicates = new DataAbilityPredicates();
+>     predicates.equalTo("userId", 102);
+>     // 构造更新数据
+>     ValuesBucket valuesBucket = new ValuesBucket();
+>     valuesBucket.putString("name", "Tom");
+>     valuesBucket.putInteger("age", 12);
+>     helper.update(uri, valuesBucket, predicates);
+>     ```
+>
+>   - executeBatch()
+>
+>     此方法用来执行批量操作。DataAbilityOperation中提供了设置操作类型、数据和操作条件的方法，开发者可自行设置自己要执行的数据库操作。插入多条数据的代码示例如下：
+>
+>     ```java
+>     DataAbilityHelper helper = DataAbilityHelper.creator(abilityObj, insertUri);
+>     // 构造批量操作
+>     ValuesBucket value1 = initSingleValue();
+>     DataAbilityOperation opt1 = DataAbilityOperation
+>     	.newInsertBuilder(insertUri).
+>         withValuesBucket(value1).
+>         build();
+>     ValuesBucket value2 = initSingleValue2();
+>     DataAbilityOperation opt2 = DataAbilityOperation
+>     	.newInsertBuilder(insertUri)
+>         .withValuesBucket(value2)
+>         .build();
+>     ArrayList<DataAbilityOperation> operations = new ArrayList<DataAbilityOperation>();
+>     operations.add(opt1);
+>     operations.add(opt2);
+>     DataAbilityResult[] result = helper.executeBatch(insertUri, operations);
+>     ```
+
+到这里PA & FA就基本结束了。挖的坑慢慢来吧。
+
+
+
+
+
+
+
+## 前面说要补的坑
+
+### 跨Ability跳转
+
+### Data Ability里面如何写文件保存的目录
+
+### Data Ability里关于数据库别名等的定义
+
+### HiLog的api使用
+
+### Math.toIntExact是个啥？
+
+### DataAbilityHelper的Context是个啥？
+
+### DataAbilityHelper的条件支持什么（DataAbilityPredicates APIs）
 
