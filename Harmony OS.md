@@ -390,7 +390,6 @@ DataAbility相当于提供了一个与传统前后端开发中后台的一个重
 >     // 看上去这个应该是需要单独配置来着？再挖个坑。
 > }
 >    ```
->    
 
 主要的问题是这个数据库名称以及具体配置应当在哪里实现（x
 
@@ -605,14 +604,14 @@ DataAbility相当于提供了一个与传统前后端开发中后台的一个重
 >
 >   
 >
->   | 方法                                                         | 描述                   |
->   | ------------------------------------------------------------ | ---------------------- |
->   | `ResultSet query(Uri uri, String[] columns, DataAbilityPredicates predicates) ` | 查询数据库             |
->   | `int insert(Uri uri, ValuesBucket value) `                   | 向数据库中插入单条数据 |
->   | `int batchInsert(Uri uri, ValuesBucket[] values) `           | 向数据库中插入多条数据 |
->   | `int delete(Uri uri, DataAbilityPredicates predicates) `     | 删除一条或多条数据     |
->   | `int update(Uri uri, ValuesBucket value, DataAbilityPredicates predicates) ` | 更新数据库             |
->   | `DataAbilityResult[] executeBatch(ArrayList<DataAbilityOperation> operations) ` | 批量操作数据库         |
+> | 方法                                                         | 描述                   |
+> | ------------------------------------------------------------ | ---------------------- |
+> | `ResultSet query(Uri uri, String[] columns, DataAbilityPredicates predicates) ` | 查询数据库             |
+> | `int insert(Uri uri, ValuesBucket value) `                   | 向数据库中插入单条数据 |
+> | `int batchInsert(Uri uri, ValuesBucket[] values) `           | 向数据库中插入多条数据 |
+> | `int delete(Uri uri, DataAbilityPredicates predicates) `     | 删除一条或多条数据     |
+> | `int update(Uri uri, ValuesBucket value, DataAbilityPredicates predicates) ` | 更新数据库             |
+> | `DataAbilityResult[] executeBatch(ArrayList<DataAbilityOperation> operations) ` | 批量操作数据库         |
 >
 >   这些方法的使用说明如下：
 >
@@ -730,17 +729,22 @@ DataAbility相当于提供了一个与传统前后端开发中后台的一个重
 
 ## 前面说要补的坑
 
-### 跨Ability跳转
+### FA & PA Part
 
-### Data Ability里面如何写文件保存的目录
+#### 跨Ability跳转
 
-### Data Ability里关于数据库别名等的定义
+#### Data Ability里面如何写文件保存的目录
 
-### HiLog的api使用
+#### Data Ability里关于数据库别名等的定义
 
-### Math.toIntExact是个啥？
+#### HiLog的api使用
 
-### DataAbilityHelper的Context是个啥？
+#### Math.toIntExact是个啥？
 
-### DataAbilityHelper的条件支持什么（DataAbilityPredicates APIs）
+#### DataAbilityHelper的Context是个啥？
 
+#### DataAbilityHelper的条件支持什么（DataAbilityPredicates APIs）
+
+### Thread Part
+
+#### 1
