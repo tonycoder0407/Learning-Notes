@@ -109,7 +109,7 @@ $$
 
 > Let S be a multiset with objects of k different types, where each object has an infinite repetition number. Then the number of r-permutations of S is
 
- 
+
 $$
 k^r
 $$
@@ -262,4 +262,20 @@ $$
 > C0=1   C1=1   C2=2   C3=5   C4=14
 >
 > C5=42  C6=132  C7=429 C8=1430 C9=4862
+
+### Difference Sequences
+
+> Let  h<sub>0</sub>,h<sub>1</sub>,…,h<sub>n</sub>,,…                   (2.61)
+>
+>   be a sequence of numbers. We define a new sequence
+>
+>      △h<sub>0</sub>,△h<sub>1</sub>,△h<sub>2</sub>,…,△h<sub>n</sub>,…,    (2.62)
+>
+>  called the (first-order) difference sequence of (2.61), by
+>
+>      △h<sub>n</sub>= h<sub>n+1</sub>-h<sub>n</sub>, (n ≥ 0).
+>
+> The terms of the difference sequence (2.62) are the differences of consecutive terms of the sequence (2.61). We can form the difference sequence of (2.62) and obtain the second-order difference sequence
+>
+>     △<sup>2</sup>h<sub>0</sub>,△<sup>2</sup>h<sub>1</sub>,△<sup>2</sup>h<sub>2</sub>,…,△<sup>2</sup>h<sub>n</sub>,….
 

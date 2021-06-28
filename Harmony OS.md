@@ -602,7 +602,7 @@ DataAbility相当于提供了一个与传统前后端开发中后台的一个重
 >
 >   对数据库的操作方法，详见[数据管理](https://developer.harmonyos.com/cn/docs/documentation/doc-guides/database-relational-overview-0000000000030046)中各数据库类型的开发指南。
 >
->   
+> 
 >
 > | 方法                                                         | 描述                   |
 > | ------------------------------------------------------------ | ---------------------- |
@@ -721,11 +721,102 @@ DataAbility相当于提供了一个与传统前后端开发中后台的一个重
 
 到这里PA & FA就基本结束了。挖的坑慢慢来吧。
 
+### 文档更新内容 (Updated June 29th@2021)
 
+由于文档更新以后增加了新的部分，这里决定将公共事件与通知、服务卡片、剪贴板三个部分挪到线程后进行讨论。
 
+## Threading
 
+这个部分主要对线程管理和通信进行简要的讨论与分析，在写完操作系统以后可以扒拉下c版本实现的方案。
 
+### 线程管理
 
+> 不同应用在各自独立的进程中运行。当应用以任何形式启动时，系统为其创建进程，该进程将持续运行。当进程完成当前任务处于等待状态，且系统资源不足时，系统自动回收。
+>
+> 在启动应用时，系统会为该应用创建一个称为“主线程”的执行线程。该线程随着应用创建或消失，是应用的核心线程。UI界面的显示和更新等操作，都是在主线程上进行。主线程又称UI线程，默认情况下，所有的操作都是在主线程上执行。如果需要执行比较耗时的任务（如下载文件、查询数据库），可创建其他线程来处理。
+
+管理线程是提升性能的重要方案，而管理线程的重要步骤是原子化设计业务。而具体到业务场景分析时，总会有需要串行化的业务逻辑，此时就不能简单的将所有任务分割以后丢给`TaskDispatcher`——这将是灾难性的。总而言之，按照渲染、业务、I/O而言，在不影响运行的情况下I/O可以作为优先级相对较低的任务分配。
+
+具体到homo的实现而言，任务分发器具有四个种类，而调用每种任务分发器均需要由Ability执行。
+
+> TaskDispatcher具有多种实现，每种实现对应不同的任务分发器。在分发任务时可以指定任务的优先级，由同一个任务分发器分发出的任务具有相同的优先级。系统提供的任务分发器有GlobalTaskDispatcher、ParallelTaskDispatcher、SerialTaskDispatcher 、SpecTaskDispatcher。
+>
+> - GlobalTaskDispatcher
+>
+>   全局并发任务分发器，由Ability执行getGlobalTaskDispatcher()获取。适用于任务之间没有联系的情况。一个应用只有一个GlobalTaskDispatcher，它在程序结束时才被销毁。
+>
+>   ```java
+>   TaskDispatcher globalTaskDispatcher = getGlobalTaskDispatcher(TaskPriority.DEFAULT);
+>   ```
+>
+> - ParallelTaskDispatcher
+>
+>   并发任务分发器，由Ability执行createParallelTaskDispatcher()创建并返回。与GlobalTaskDispatcher不同的是，ParallelTaskDispatcher不具有全局唯一性，可以创建多个。开发者在创建或销毁dispatcher时，需要持有对应的对象引用 。
+>
+>   ```java
+>   String dispatcherName = "parallelTaskDispatcher";
+>   TaskDispatcher parallelTaskDispatcher = createParallelTaskDispatcher(dispatcherName, TaskPriority.DEFAULT);
+>   ```
+>
+> - SerialTaskDispatcher
+>
+>   串行任务分发器，由Ability执行createSerialTaskDispatcher()创建并返回。由该分发器分发的所有的任务都是按顺序执行，但是执行这些任务的线程并不是固定的。如果要执行并行任务，应使用ParallelTaskDispatcher或者GlobalTaskDispatcher，而不是创建多个SerialTaskDispatcher。如果任务之间没有依赖，应使用GlobalTaskDispatcher来实现。它的创建和销毁由开发者自己管理，开发者在使用期间需要持有该对象引用。
+>
+>   ```java
+>   String dispatcherName = "serialTaskDispatcher";
+>   TaskDispatcher serialTaskDispatcher = createSerialTaskDispatcher(dispatcherName, TaskPriority.DEFAULT);
+>   ```
+>
+> - SpecTaskDispatcher
+>
+>   专有任务分发器，绑定到专有线程上的任务分发器。目前已有的专有线程为UI线程，通过UITaskDispatcher进行任务分发。
+>
+>   UITaskDispatcher：绑定到应用主线程的专有任务分发器， 由Ability执行getUITaskDispatcher()创建并返回。 由该分发器分发的所有的任务都是在主线程上按顺序执行，它在应用程序结束时被销毁。
+>
+>   ```java
+>   TaskDispatcher uiTaskDispatcher = getUITaskDispatcher();
+>   ```
+
+```java
+public interface TaskDispatcher {
+    void syncDispatch(Runnable var1);
+
+    Revocable asyncDispatch(Runnable var1);
+
+    Revocable delayDispatch(Runnable var1, long var2);
+
+    void syncDispatchBarrier(Runnable var1);
+
+    void asyncDispatchBarrier(Runnable var1);
+
+    Group createDispatchGroup();
+
+    Revocable asyncGroupDispatch(Group var1, Runnable var2);
+
+    boolean groupDispatchWait(Group var1, long var2);
+
+    void groupDispatchNotify(Group var1, Runnable var2);
+
+    void applyDispatch(Consumer<Long> var1, long var2);
+}
+```
+
+这里扒拉过来了ohos源码里面的一点东西。`TaskDispatcher`本身是个接口，所以写代码的时候要注意到老板之前讲过的那个“很好的”方案：
+
+```java
+public interface myInterface{}
+public class myClass extends myInterface{}
+
+...
+   	myInterface MyObject = new myClass(); 
+...
+```
+
+十分自然的，这个写法最好的地方在于体现了依赖倒置原则。实际上可能我们也不知道最后具体的`TaskDispatcher`是什么样的，而这个写法保证了jvm会帮助我们检测`MyObject`一定是一个实现了`myInterface`接口的对象，不管这个对象是`myClass`类或者其他类。
+
+那么话题
+
+### 线程通信
 
 ## 前面说要补的坑
 
@@ -747,4 +838,4 @@ DataAbility相当于提供了一个与传统前后端开发中后台的一个重
 
 ### Thread Part
 
-#### 1
+#### 
